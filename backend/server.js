@@ -10,6 +10,8 @@ const FRONTEND_ORIGIN =
 
 const app = express();
 
+app.use(express.json());
+
 // --- middleware
 app.use(
   cors({
@@ -31,7 +33,7 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-// --- DB (important: connect once)
+// --- DB (connect once)
 let isConnected = false;
 async function ensureDB() {
   if (!isConnected) {
@@ -43,26 +45,5 @@ async function ensureDB() {
 // --- export for Vercel
 export default async function handler(req, res) {
   await ensureDB();
-
-  // manually parse body (Vercel safe)
-  if (req.method === "POST") {
-    let body = "";
-
-    await new Promise((resolve) => {
-      req.on("data", (chunk) => {
-        body += chunk;
-      });
-
-      req.on("end", () => {
-        try {
-          req.body = body ? JSON.parse(body) : {};
-        } catch (err) {
-          req.body = {};
-        }
-        resolve();
-      });
-    });
-  }
-
   return serverless(app)(req, res);
 }
