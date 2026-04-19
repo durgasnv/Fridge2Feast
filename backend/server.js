@@ -17,7 +17,8 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "64kb" }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // --- routes
 app.get("/health", (_req, res) => {
@@ -44,5 +45,15 @@ async function ensureDB() {
 // --- export for Vercel
 export default async function handler(req, res) {
   await ensureDB();
+
+  // Fix for Vercel body parsing issue
+  if (req.body && typeof req.body === "string") {
+    try {
+      req.body = JSON.parse(req.body);
+    } catch (e) {
+      return res.status(400).json({ error: "Invalid JSON body" });
+    }
+  }
+
   return serverless(app)(req, res);
 }
