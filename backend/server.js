@@ -1,14 +1,16 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import serverless from "serverless-http";
 import { connectDB } from "./config/database.js";
 import recipeRouter from "./routes/recipe.js";
 
-const PORT = Number(process.env.PORT) || 5000;
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const FRONTEND_ORIGIN =
+  process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 
 const app = express();
 
+// --- middleware
 app.use(
   cors({
     origin: FRONTEND_ORIGIN,
@@ -17,19 +19,30 @@ app.use(
 );
 app.use(express.json({ limit: "64kb" }));
 
+// --- routes
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "fridge2feast-api" });
 });
 
 app.use("/api", recipeRouter);
 
+// --- error handler
 app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(500).json({ error: "Internal server error" });
 });
 
-await connectDB();
+// --- DB (important: connect once)
+let isConnected = false;
+async function ensureDB() {
+  if (!isConnected) {
+    await connectDB();
+    isConnected = true;
+  }
+}
 
-app.listen(PORT, () => {
-  console.log(`API listening on http://localhost:${PORT}`);
-});
+// --- export for Vercel
+export default async function handler(req, res) {
+  await ensureDB();
+  return serverless(app)(req, res);
+}
