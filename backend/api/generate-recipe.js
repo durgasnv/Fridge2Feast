@@ -4,30 +4,18 @@ import { Recipe } from "../models/Recipe.js";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.1-8b-instant";
-const GROQ_TIMEOUT_MS = 10000;
+const GROQ_TIMEOUT_MS = 15000;
 
-const SYSTEM_PROMPT = `You are a professional Italian chef.
+const SYSTEM_PROMPT = `You are Cucina, a warm and knowledgeable Italian cooking assistant.
 
-Given exactly 3 ingredients, you MUST use ALL 3 ingredients in the recipe.
+When the user asks you to generate a recipe, mentions ingredients they want to cook with, or asks you to modify an existing recipe, respond with ONLY this JSON (no markdown, no extra text):
+{"type":"recipe","recipeName":"string","prepTime":"string","ingredientsList":["string"],"instructions":["string"]}
 
-STRICT RULES:
-- All 3 ingredients MUST appear in the ingredientsList
-- All 3 ingredients MUST be used in the instructions
-- Do NOT ignore any ingredient
-- Do NOT substitute ingredients
-- Do NOT skip ingredients even if unusual
+For all other messages — cooking tips, questions, general conversation — respond in plain conversational text. Keep responses concise and warm.
 
-- Return ONLY valid JSON
-- No explanation
-- No markdown
-
-Format:
-{
-  "recipeName": "string",
-  "prepTime": "string",
-  "ingredientsList": ["string"],
-  "instructions": ["string"]
-}`;
+Rules:
+- If the user says "make it spicier", "make it vegetarian", "use less oil" etc. — return a full updated recipe JSON
+- Never mix JSON and plain text in the same response`;
 
 let isConnected = false;
 
@@ -38,82 +26,21 @@ async function ensureDB() {
   }
 }
 
-function sendJSON(res, statusCode, payload) {
-  return res.status(statusCode).json(payload);
-}
-
-function getRequestBody(req) {
-  if (typeof req.body !== "string") {
-    return req.body;
-  }
-
+function parseGroqResponse(content) {
+  console.log("Raw Groq:", content);
+  const cleaned = content.replace(/```json/gi, "").replace(/```/g, "").trim();
   try {
-    return JSON.parse(req.body);
+    const parsed = JSON.parse(cleaned);
+    if (parsed.type === "recipe") {
+      return { recipe: parsed, reply: null };
+    }
   } catch {
-    return null;
+    // not JSON — treat as plain text
   }
+  return { recipe: null, reply: content };
 }
 
-function validateIngredients(body) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return { isValid: false, error: 'Request body must include "ingredients".' };
-  }
-
-  if (!Array.isArray(body.ingredients) || body.ingredients.length !== 3) {
-    return { isValid: false, error: "Exactly 3 ingredients are required." };
-  }
-
-  const ingredients = body.ingredients.map((ingredient) =>
-    typeof ingredient === "string" ? ingredient.trim() : ""
-  );
-
-  if (ingredients.some((ingredient) => ingredient.length === 0)) {
-    return { isValid: false, error: "Each ingredient must be a non-empty string." };
-  }
-
-  return { isValid: true, ingredients };
-}
-
-function cleanAIResponse(responseText) {
-  return responseText
-    .replace(/```json/gi, "")
-    .replace(/```/g, "")
-    .trim();
-}
-
-function parseRecipe(responseText) {
-  console.log("Raw Groq:", responseText);
-  let parsed;
-  try {
-    parsed = JSON.parse(cleanAIResponse(responseText));
-  } catch (e) {
-    throw Object.assign(new Error("Invalid AI response format"), { raw: responseText });
-  }
-  return parsed;
-}
-
-function normalizeRecipe(payload) {
-  const recipeName = typeof payload?.recipeName === "string" ? payload.recipeName.trim() : "";
-  const prepTime = typeof payload?.prepTime === "string" ? payload.prepTime.trim() : "";
-  const ingredientsList = Array.isArray(payload?.ingredientsList)
-    ? payload.ingredientsList
-        .map((ingredient) => (typeof ingredient === "string" ? ingredient.trim() : ""))
-        .filter(Boolean)
-    : [];
-  const instructions = Array.isArray(payload?.instructions)
-    ? payload.instructions
-        .map((instruction) => (typeof instruction === "string" ? instruction.trim() : ""))
-        .filter(Boolean)
-    : [];
-
-  if (!recipeName || !prepTime || ingredientsList.length === 0 || instructions.length === 0) {
-    throw new Error("AI response is missing required recipe fields.");
-  }
-
-  return { recipeName, prepTime, ingredientsList, instructions };
-}
-
-async function callGroq(ingredients) {
+async function callGroq(messages) {
   if (!process.env.GROQ_API_KEY) {
     throw new Error("GROQ_API_KEY is not configured.");
   }
@@ -131,11 +58,8 @@ async function callGroq(ingredients) {
       },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: `Ingredients: ${ingredients.join(", ")}` },
-        ],
-        temperature: 0.4,
+        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
+        temperature: 0.5,
       }),
     });
 
@@ -150,11 +74,9 @@ async function callGroq(ingredients) {
       throw new Error("Groq API returned an empty response.");
     }
 
-    return normalizeRecipe(parseRecipe(content));
+    return parseGroqResponse(content);
   } catch (error) {
-    if (error.name === "AbortError") {
-      throw new Error("Groq API request timed out.");
-    }
+    if (error.name === "AbortError") throw new Error("Groq API request timed out.");
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -166,48 +88,43 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+  const messages = body?.messages;
 
-  const validation = validateIngredients(getRequestBody(req));
-  if (!validation.isValid) {
-    return sendJSON(res, 400, { error: validation.error });
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: "messages array is required." });
   }
 
   try {
     await ensureDB();
 
-    let recipe;
+    let result;
     try {
-      recipe = await callGroq(validation.ingredients);
+      result = await callGroq(messages);
     } catch (groqError) {
-      console.error("Groq failed, using fallback:", groqError.message);
-      if (groqError.raw) console.error("Raw response:", groqError.raw);
-      recipe = {
-        recipeName: "Simple Mix",
-        prepTime: "15 minutes",
-        ingredientsList: validation.ingredients,
-        instructions: [
-          `Prepare your ingredients: ${validation.ingredients.join(", ")}.`,
-          "Combine them together using your preferred cooking method.",
-          "Season to taste and serve.",
-        ],
-      };
+      console.error("Groq failed:", groqError.message);
+      return res.status(200).json({
+        reply: "Sorry, I'm having trouble right now. Please try again.",
+        recipe: null,
+      });
     }
 
-    await Recipe.create({
-      ingredients: validation.ingredients,
-      ...recipe,
-    }).catch((dbErr) => console.error("DB save failed:", dbErr.message));
+    if (result.recipe) {
+      await Recipe.create({
+        ingredients: result.recipe.ingredientsList || [],
+        recipeName: result.recipe.recipeName,
+        prepTime: result.recipe.prepTime,
+        ingredientsList: result.recipe.ingredientsList,
+        instructions: result.recipe.instructions,
+      }).catch((err) => console.error("DB save failed:", err.message));
+    }
 
-    return sendJSON(res, 200, recipe);
+    return res.status(200).json(result);
   } catch (error) {
-    console.error("Recipe generation failed:", error.message);
-    return sendJSON(res, 500, { error: "Failed to generate recipe." });
+    console.error("Handler failed:", error.message);
+    return res.status(500).json({ error: "Something went wrong." });
   }
 }

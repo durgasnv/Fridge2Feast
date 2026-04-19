@@ -1,9 +1,9 @@
 const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 /**
- * @param {string[]} ingredients
+ * @param {{ role: string; content: string }[]} messages
  */
-export async function generateRecipe(ingredients) {
+export async function chat(messages) {
   if (!API_URL) {
     throw new Error(
       "VITE_API_URL is not set. Copy frontend/.env.example to frontend/.env and set VITE_API_URL."
@@ -13,13 +13,12 @@ export async function generateRecipe(ingredients) {
   const res = await fetch(`${API_URL}/api/generate-recipe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ingredients }),
+    body: JSON.stringify({ messages }),
   });
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const msg = data.error || data.message || `Request failed (${res.status})`;
-    throw new Error(msg);
+    throw new Error(data.error || data.message || `Request failed (${res.status})`);
   }
-  return data;
+  return data; // { reply: string|null, recipe: object|null }
 }
