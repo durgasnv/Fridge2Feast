@@ -82,11 +82,14 @@ function cleanAIResponse(responseText) {
 }
 
 function parseRecipe(responseText) {
+  console.log("Raw Groq:", responseText);
+  let parsed;
   try {
-    return JSON.parse(cleanAIResponse(responseText));
-  } catch {
-    throw new Error("Invalid AI response format");
+    parsed = JSON.parse(cleanAIResponse(responseText));
+  } catch (e) {
+    throw Object.assign(new Error("Invalid AI response format"), { raw: responseText });
   }
+  return parsed;
 }
 
 function normalizeRecipe(payload) {
@@ -171,12 +174,28 @@ export default async function handler(req, res) {
   try {
     await ensureDB();
 
-    const recipe = await callGroq(validation.ingredients);
+    let recipe;
+    try {
+      recipe = await callGroq(validation.ingredients);
+    } catch (groqError) {
+      console.error("Groq failed, using fallback:", groqError.message);
+      if (groqError.raw) console.error("Raw response:", groqError.raw);
+      recipe = {
+        recipeName: "Simple Mix",
+        prepTime: "15 minutes",
+        ingredientsList: validation.ingredients,
+        instructions: [
+          `Prepare your ingredients: ${validation.ingredients.join(", ")}.`,
+          "Combine them together using your preferred cooking method.",
+          "Season to taste and serve.",
+        ],
+      };
+    }
 
     await Recipe.create({
       ingredients: validation.ingredients,
       ...recipe,
-    });
+    }).catch((dbErr) => console.error("DB save failed:", dbErr.message));
 
     return sendJSON(res, 200, recipe);
   } catch (error) {
