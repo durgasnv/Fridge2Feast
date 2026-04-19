@@ -2,7 +2,7 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import { connectDB } from "./config/database.js";
-import { recipeRouter } from "./routes/recipeRoutes.js";
+import recipeRouter from "./routes/recipe.js";
 
 const PORT = Number(process.env.PORT) || 5000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
