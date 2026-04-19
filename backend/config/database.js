@@ -1,14 +1,11 @@
 import mongoose from "mongoose";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 export async function connectDB() {
   try {
-    const mongoUri = process.env.MONGO_URI;
+    const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
 
     if (!mongoUri) {
-      throw new Error("Missing MONGO_URI in environment.");
+      throw new Error("Missing MONGO_URI or MONGODB_URI in environment.");
     }
 
     mongoose.set("strictQuery", true);

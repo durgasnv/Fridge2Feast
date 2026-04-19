@@ -21,7 +21,7 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "fridge2feast-api" });
 });
 
-app.use("/", recipeRouter);
+app.use("/api", recipeRouter);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
