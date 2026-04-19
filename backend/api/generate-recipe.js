@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { connectDB } from "./config/database.js";
-import { Recipe } from "./models/Recipe.js";
+import { connectDB } from "../config/database.js";
+import { Recipe } from "../models/Recipe.js";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.1-8b-instant";
@@ -40,10 +40,6 @@ async function ensureDB() {
 
 function sendJSON(res, statusCode, payload) {
   return res.status(statusCode).json(payload);
-}
-
-function getPathname(req) {
-  return new URL(req.url, "http://localhost").pathname;
 }
 
 function getRequestBody(req) {
@@ -163,8 +159,8 @@ async function callGroq(ingredients) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST" || getPathname(req) !== "/api/generate-recipe") {
-    return sendJSON(res, 404, { error: "Not found" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   const validation = validateIngredients(getRequestBody(req));
