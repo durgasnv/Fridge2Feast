@@ -22,7 +22,7 @@ export function HomePage() {
     setRecipe(null);
     const trimmed = values.map((v) => v.trim());
     if (trimmed.some((v) => !v)) {
-      setError("Please fill in all three ingredients.");
+      setError("Per favore—three ingredients, each one filled in.");
       return;
     }
     setLoading(true);
@@ -37,19 +37,37 @@ export function HomePage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col px-4 py-12 sm:px-6 lg:px-8">
-      <header className="mb-10 text-center">
-        <p className="text-sm font-medium text-emerald-400/90">Fridge2Feast</p>
-        <h1 className="font-display mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          Turn three ingredients into a meal
+    <div className="mx-auto flex min-h-screen w-full max-w-xl flex-col items-center px-5 py-14 sm:px-8 sm:py-20">
+      <header className="mb-12 w-full text-center">
+        <div
+          className="mb-5 flex items-center justify-center gap-3 text-2xl sm:text-3xl"
+          aria-hidden="true"
+        >
+          <span className="select-none" title="pasta">
+            🍝
+          </span>
+          <span className="select-none" title="tomato">
+            🍅
+          </span>
+          <span className="select-none" title="garlic">
+            🧄
+          </span>
+        </div>
+        <p className="font-serif text-sm font-semibold uppercase tracking-[0.35em] text-wine/80">
+          Fridge2Feast
+        </p>
+        <h1 className="font-serif mt-4 text-[2.1rem] font-semibold leading-[1.15] text-wine sm:text-4xl">
+          Tre ingredienti,
+          <br />
+          <span className="italic text-olive">una ricetta</span>
         </h1>
-        <p className="mx-auto mt-3 max-w-xl text-balance text-slate-400">
-          Enter exactly three ingredients. We will generate a recipe and save it
-          to your database.
+        <p className="mx-auto mt-5 max-w-md text-pretty text-[0.95rem] leading-relaxed text-olive/85">
+          Hand your pantry three stars—we’ll answer with a dish worthy of the
+          table. Saved quietly, served with care.
         </p>
       </header>
 
-      <div className="grid flex-1 gap-8 lg:grid-cols-2 lg:items-start">
+      <div className="flex w-full flex-col items-center gap-12">
         <IngredientForm
           values={values}
           onChange={handleChange}
