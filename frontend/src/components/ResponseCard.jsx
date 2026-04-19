@@ -24,8 +24,6 @@ function renderInline(text) {
  * - Everything else → body text (Lora)
  */
 export function ResponseCard({ text }) {
-  if (!text) return null;
-
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
@@ -34,6 +32,8 @@ export function ResponseCard({ text }) {
       setTimeout(() => setCopied(false), 2000);
     });
   }
+
+  if (!text) return null;
 
   const lines = text.split("\n");
 
