@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { connectDB } from "../config/database.js";
-import { Recipe } from "../models/Recipe.js";
+import { connectDB } from "../backend/config/database.js";
+import { Recipe } from "../backend/models/Recipe.js";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.1-8b-instant";
