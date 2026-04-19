@@ -1,3 +1,18 @@
+/** Converts **bold** markers inside a string into <strong> spans. */
+function renderInline(text) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    const match = part.match(/^\*\*(.+)\*\*$/);
+    return match ? (
+      <strong key={i} className="font-semibold text-wine/90">
+        {match[1]}
+      </strong>
+    ) : (
+      part
+    );
+  });
+}
+
 /**
  * Renders a plain-text Groq response with styled typography:
  * - **Bold lines** → recipe name (Cormorant Garamond, large, wine)
@@ -58,7 +73,7 @@ export function ResponseCard({ text }) {
           <span className="font-serif mt-0.5 text-base font-semibold text-wine/80 tabular-nums">
             {stepMatch[1]}.
           </span>
-          <span>{stepMatch[2]}</span>
+          <span>{renderInline(stepMatch[2])}</span>
         </li>
       );
     }
@@ -68,7 +83,7 @@ export function ResponseCard({ text }) {
       return (
         <li key={i} className="flex gap-2 font-sans text-sm leading-relaxed text-olive">
           <span className="mt-1 text-wine/60">·</span>
-          <span>{trimmed.slice(2)}</span>
+          <span>{renderInline(trimmed.slice(2))}</span>
         </li>
       );
     }
@@ -78,10 +93,10 @@ export function ResponseCard({ text }) {
       return <div key={i} className="h-1" />;
     }
 
-    // Plain text
+    // Plain text (may contain inline bold)
     return (
       <p key={i} className="font-sans mt-2 text-sm leading-relaxed text-olive">
-        {trimmed}
+        {renderInline(trimmed)}
       </p>
     );
   });
