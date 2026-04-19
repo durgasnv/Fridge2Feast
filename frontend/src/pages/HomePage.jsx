@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { askQuestion } from "../lib/api.js";
+import { ResponseCard } from "../components/ResponseCard.jsx";
 
 export function HomePage() {
   const [question, setQuestion] = useState("");
@@ -81,23 +82,7 @@ export function HomePage() {
             </div>
           )}
 
-          {response && (
-            <article className="rounded-menu border-[3px] border-double border-wine/85 bg-cream-soft shadow-menu overflow-hidden">
-              <div className="border-b border-wine/20 bg-gradient-to-b from-cream-deep/90 to-cream-soft px-8 py-5 text-center">
-                <p className="font-serif text-xs font-semibold uppercase tracking-[0.4em] text-olive/75">
-                  La risposta
-                </p>
-              </div>
-              <div className="px-8 py-7">
-                <p className="font-sans text-sm leading-relaxed text-olive whitespace-pre-wrap">
-                  {response}
-                </p>
-              </div>
-              <footer className="flex justify-center border-t border-wine/10 bg-cream-deep/30 px-6 py-4">
-                <div className="h-px w-16 bg-gradient-to-r from-transparent via-wine/25 to-transparent" />
-              </footer>
-            </article>
-          )}
+          {response && <ResponseCard text={response} />}
         </div>
       )}
     </div>
