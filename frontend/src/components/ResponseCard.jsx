@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 /** Converts **bold** markers inside a string into <strong> spans. */
 function renderInline(text) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -23,6 +25,15 @@ function renderInline(text) {
  */
 export function ResponseCard({ text }) {
   if (!text) return null;
+
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   const lines = text.split("\n");
 
@@ -102,11 +113,21 @@ export function ResponseCard({ text }) {
   });
 
   return (
-    <article className="rounded-menu border-[3px] border-double border-wine/85 bg-cream-soft shadow-menu overflow-hidden">
-      <div className="border-b border-wine/20 bg-gradient-to-b from-cream-deep/90 to-cream-soft px-8 py-5 text-center">
-        <p className="font-serif text-xs font-semibold uppercase tracking-[0.4em] text-olive/75">
-          La risposta
-        </p>
+    <article className="animate-recipe-enter rounded-menu border-[3px] border-double border-wine/85 bg-cream-soft shadow-menu overflow-hidden">
+      <div className="border-b border-wine/20 bg-gradient-to-b from-cream-deep/90 to-cream-soft px-8 py-5">
+        <div className="flex items-center justify-between">
+          <div className="w-16" />
+          <p className="font-serif text-xs font-semibold uppercase tracking-[0.4em] text-olive/75">
+            La risposta
+          </p>
+          <button
+            onClick={handleCopy}
+            className="w-16 text-right font-sans text-xs text-olive/50 transition hover:text-wine"
+            title="Copy to clipboard"
+          >
+            {copied ? "✓ Copied" : "Copy"}
+          </button>
+        </div>
       </div>
 
       <div className="px-8 py-7">
