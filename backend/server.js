@@ -1,40 +1,36 @@
 import "dotenv/config";
-import cors from "cors";
-import express from "express";
-import serverless from "serverless-http";
 import { connectDB } from "./config/database.js";
-import recipeRouter from "./routes/recipe.js";
+import { Recipe } from "./models/Recipe.js";
 
-const FRONTEND_ORIGIN =
-  process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_MODEL = "llama-3.1-8b-instant";
+const GROQ_TIMEOUT_MS = 10000;
 
-const app = express();
+const SYSTEM_PROMPT = `You are a professional Italian chef.
 
-app.use(express.json());
+Given exactly 3 ingredients, you MUST use ALL 3 ingredients in the recipe.
 
-// --- middleware
-app.use(
-  cors({
-    origin: FRONTEND_ORIGIN,
-    credentials: true,
-  })
-);
+STRICT RULES:
+- All 3 ingredients MUST appear in the ingredientsList
+- All 3 ingredients MUST be used in the instructions
+- Do NOT ignore any ingredient
+- Do NOT substitute ingredients
+- Do NOT skip ingredients even if unusual
 
-// --- routes
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "fridge2feast-api" });
-});
+- Return ONLY valid JSON
+- No explanation
+- No markdown
 
-app.use("/api", recipeRouter);
+Format:
+{
+  "recipeName": "string",
+  "prepTime": "string",
+  "ingredientsList": ["string"],
+  "instructions": ["string"]
+}`;
 
-// --- error handler
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  res.status(500).json({ error: "Internal server error" });
-});
-
-// --- DB (connect once)
 let isConnected = false;
+
 async function ensureDB() {
   if (!isConnected) {
     await connectDB();
@@ -42,8 +38,153 @@ async function ensureDB() {
   }
 }
 
-// --- export for Vercel
+function sendJSON(res, statusCode, payload) {
+  return res.status(statusCode).json(payload);
+}
+
+function getPathname(req) {
+  return new URL(req.url, "http://localhost").pathname;
+}
+
+function getRequestBody(req) {
+  if (typeof req.body !== "string") {
+    return req.body;
+  }
+
+  try {
+    return JSON.parse(req.body);
+  } catch {
+    return null;
+  }
+}
+
+function validateIngredients(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { isValid: false, error: 'Request body must include "ingredients".' };
+  }
+
+  if (!Array.isArray(body.ingredients) || body.ingredients.length !== 3) {
+    return { isValid: false, error: "Exactly 3 ingredients are required." };
+  }
+
+  const ingredients = body.ingredients.map((ingredient) =>
+    typeof ingredient === "string" ? ingredient.trim() : ""
+  );
+
+  if (ingredients.some((ingredient) => ingredient.length === 0)) {
+    return { isValid: false, error: "Each ingredient must be a non-empty string." };
+  }
+
+  return { isValid: true, ingredients };
+}
+
+function cleanAIResponse(responseText) {
+  return responseText
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+}
+
+function parseRecipe(responseText) {
+  try {
+    return JSON.parse(cleanAIResponse(responseText));
+  } catch {
+    throw new Error("Invalid AI response format");
+  }
+}
+
+function normalizeRecipe(payload) {
+  const recipeName = typeof payload?.recipeName === "string" ? payload.recipeName.trim() : "";
+  const prepTime = typeof payload?.prepTime === "string" ? payload.prepTime.trim() : "";
+  const ingredientsList = Array.isArray(payload?.ingredientsList)
+    ? payload.ingredientsList
+        .map((ingredient) => (typeof ingredient === "string" ? ingredient.trim() : ""))
+        .filter(Boolean)
+    : [];
+  const instructions = Array.isArray(payload?.instructions)
+    ? payload.instructions
+        .map((instruction) => (typeof instruction === "string" ? instruction.trim() : ""))
+        .filter(Boolean)
+    : [];
+
+  if (!recipeName || !prepTime || ingredientsList.length === 0 || instructions.length === 0) {
+    throw new Error("AI response is missing required recipe fields.");
+  }
+
+  return { recipeName, prepTime, ingredientsList, instructions };
+}
+
+async function callGroq(ingredients) {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error("GROQ_API_KEY is not configured.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GROQ_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: `Ingredients: ${ingredients.join(", ")}` },
+        ],
+        temperature: 0.4,
+      }),
+    });
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(data?.error?.message || "Groq API request failed.");
+    }
+
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || !content.trim()) {
+      throw new Error("Groq API returned an empty response.");
+    }
+
+    return normalizeRecipe(parseRecipe(content));
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("Groq API request timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export default async function handler(req, res) {
-  await ensureDB();
-  return serverless(app)(req, res);
+  if (req.method !== "POST" || getPathname(req) !== "/api/generate-recipe") {
+    return sendJSON(res, 404, { error: "Not found" });
+  }
+
+  const validation = validateIngredients(getRequestBody(req));
+  if (!validation.isValid) {
+    return sendJSON(res, 400, { error: validation.error });
+  }
+
+  try {
+    await ensureDB();
+
+    const recipe = await callGroq(validation.ingredients);
+
+    await Recipe.create({
+      ingredients: validation.ingredients,
+      ...recipe,
+    });
+
+    return sendJSON(res, 200, recipe);
+  } catch (error) {
+    console.error("Recipe generation failed:", error.message);
+    return sendJSON(res, 500, { error: "Failed to generate recipe." });
+  }
 }
