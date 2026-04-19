@@ -71,7 +71,7 @@ export function HomePage() {
   return (
     <div className="mx-auto flex h-screen w-full max-w-2xl flex-col">
       {/* Header */}
-      <header className="flex-shrink-0 border-b border-wine/15 bg-cream-soft/90 px-6 py-4 text-center backdrop-blur-sm">
+      <header className="flex-shrink-0 border-b border-wine/15 bg-cream-soft/90 px-6 py-7 text-center backdrop-blur-sm">
         <div className="flex items-center justify-center gap-2 text-lg" aria-hidden="true">
           <span>🍝</span>
           <span>🍅</span>
