@@ -1,21 +1,15 @@
 import "dotenv/config";
 import { connectDB } from "../config/database.js";
-import { Recipe } from "../models/Recipe.js";
+import { Query } from "../models/Query.js";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.1-8b-instant";
 const GROQ_TIMEOUT_MS = 15000;
 
-const SYSTEM_PROMPT = `You are Cucina, a warm and knowledgeable Italian cooking assistant.
-
-When the user asks you to generate a recipe, mentions ingredients they want to cook with, or asks you to modify an existing recipe, respond with ONLY this JSON (no markdown, no extra text):
-{"type":"recipe","recipeName":"string","prepTime":"string","ingredientsList":["string"],"instructions":["string"]}
-
-For all other messages — cooking tips, questions, general conversation — respond in plain conversational text. Keep responses concise and warm.
-
-Rules:
-- If the user says "make it spicier", "make it vegetarian", "use less oil" etc. — return a full updated recipe JSON
-- Never mix JSON and plain text in the same response`;
+const SYSTEM_PROMPT = `You are a knowledgeable cooking assistant.
+Answer the user's cooking question clearly and concisely.
+If they list ingredients, suggest a recipe with a name, prep time, ingredients, and step-by-step instructions.
+Keep responses helpful and to the point.`;
 
 let isConnected = false;
 
@@ -26,21 +20,7 @@ async function ensureDB() {
   }
 }
 
-function parseGroqResponse(content) {
-  console.log("Raw Groq:", content);
-  const cleaned = content.replace(/```json/gi, "").replace(/```/g, "").trim();
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (parsed.type === "recipe") {
-      return { recipe: parsed, reply: null };
-    }
-  } catch {
-    // not JSON — treat as plain text
-  }
-  return { recipe: null, reply: content };
-}
-
-async function callGroq(messages) {
+async function callGroq(question) {
   if (!process.env.GROQ_API_KEY) {
     throw new Error("GROQ_API_KEY is not configured.");
   }
@@ -58,7 +38,10 @@ async function callGroq(messages) {
       },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: question },
+        ],
         temperature: 0.5,
       }),
     });
@@ -74,9 +57,9 @@ async function callGroq(messages) {
       throw new Error("Groq API returned an empty response.");
     }
 
-    return parseGroqResponse(content);
+    return content;
   } catch (error) {
-    if (error.name === "AbortError") throw new Error("Groq API request timed out.");
+    if (error.name === "AbortError") throw new Error("Request timed out.");
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -92,37 +75,28 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-  const messages = body?.messages;
+  const question = body?.question?.trim();
 
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ error: "messages array is required." });
+  if (!question) {
+    return res.status(400).json({ error: "question is required." });
   }
 
   try {
     await ensureDB();
 
-    let result;
+    let response;
     try {
-      result = await callGroq(messages);
+      response = await callGroq(question);
     } catch (groqError) {
       console.error("Groq failed:", groqError.message);
-      return res.status(200).json({
-        reply: "Sorry, I'm having trouble right now. Please try again.",
-        recipe: null,
-      });
+      return res.status(500).json({ error: "Failed to get a response. Please try again." });
     }
 
-    if (result.recipe) {
-      await Recipe.create({
-        ingredients: result.recipe.ingredientsList || [],
-        recipeName: result.recipe.recipeName,
-        prepTime: result.recipe.prepTime,
-        ingredientsList: result.recipe.ingredientsList,
-        instructions: result.recipe.instructions,
-      }).catch((err) => console.error("DB save failed:", err.message));
-    }
+    await Query.create({ question, response }).catch((err) =>
+      console.error("DB save failed:", err.message)
+    );
 
-    return res.status(200).json(result);
+    return res.status(200).json({ response });
   } catch (error) {
     console.error("Handler failed:", error.message);
     return res.status(500).json({ error: "Something went wrong." });

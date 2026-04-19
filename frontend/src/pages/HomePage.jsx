@@ -1,165 +1,105 @@
-import { useState, useRef, useEffect } from "react";
-import { ChatMessage } from "../components/ChatMessage.jsx";
-import { chat } from "../lib/api.js";
-
-const STARTERS = [
-  "Make pasta with tomato and garlic",
-  "I have eggs, cheese, and spinach",
-  "What can I make with chicken and lemon?",
-];
+import { useState } from "react";
+import { askQuestion } from "../lib/api.js";
 
 export function HomePage() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
+  const [question, setQuestion] = useState("");
+  const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
-  const textareaRef = useRef(null);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const q = question.trim();
+    if (!q || loading) return;
 
-  async function send(text) {
-    const userText = (text ?? input).trim();
-    if (!userText || loading) return;
-    setInput("");
-
-    const userMsg = { role: "user", content: userText };
-    const history = [...messages, userMsg];
-    setMessages(history);
     setLoading(true);
+    setError(null);
+    setResponse(null);
 
     try {
-      // Send only role + content to backend (recipe content stored as JSON string for context)
-      const apiMessages = history.map(({ role, content }) => ({ role, content }));
-      const data = await chat(apiMessages);
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          // Store JSON string as content so follow-up turns have recipe context
-          content: data.recipe ? JSON.stringify(data.recipe) : (data.reply ?? null),
-          recipe: data.recipe ?? null,
-          // Display text separately from stored content
-          displayContent: data.reply ?? null,
-        },
-      ]);
-    } catch (e) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: e.message || "Something went wrong. Please try again.",
-          recipe: null,
-          displayContent: e.message || "Something went wrong. Please try again.",
-        },
-      ]);
+      const data = await askQuestion(q);
+      setResponse(data.response);
+    } catch (err) {
+      setError(err.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
-      textareaRef.current?.focus();
-    }
-  }
-
-  function handleKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
     }
   }
 
   return (
-    <div className="mx-auto flex h-screen w-full max-w-2xl flex-col">
+    <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col items-center px-5 py-14 sm:px-8 sm:py-20">
+
       {/* Header */}
-      <header className="flex-shrink-0 border-b border-wine/15 bg-cream-soft/90 px-6 py-7 text-center backdrop-blur-sm">
-        <div className="flex items-center justify-center gap-2 text-lg" aria-hidden="true">
+      <header className="mb-12 w-full text-center">
+        <div className="mb-5 flex items-center justify-center gap-3 text-2xl sm:text-3xl" aria-hidden="true">
           <span>🍝</span>
           <span>🍅</span>
           <span>🧄</span>
         </div>
-        <p className="font-serif mt-1 text-xs font-semibold uppercase tracking-[0.35em] text-wine/80">
+        <p className="font-serif text-sm font-semibold uppercase tracking-[0.35em] text-wine/80">
           Fridge2Feast
         </p>
-        <p className="font-serif text-sm italic text-olive/60">
-          Il tuo chef personale
+        <h1 className="font-serif mt-4 text-[2.1rem] font-semibold leading-[1.15] text-wine sm:text-4xl">
+          Ask your chef
+        </h1>
+        <p className="mx-auto mt-4 max-w-md text-sm leading-relaxed text-olive/75">
+          Ask any cooking question or list your ingredients — get an instant recipe.
         </p>
       </header>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        {messages.length === 0 && !loading && (
-          <div className="flex h-full flex-col items-center justify-center gap-8 text-center">
-            <div>
-              <p className="font-serif text-2xl font-semibold text-wine">
-                Cosa c'è in frigo?
-              </p>
-              <p className="mt-2 text-sm text-olive/70">
-                Tell me what ingredients you have — I'll create a recipe.
-                <br />
-                You can follow up to refine it anytime.
-              </p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              {STARTERS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => send(s)}
-                  className="rounded-full border border-wine/25 bg-cream px-4 py-2 text-sm text-olive shadow-tag transition hover:border-wine/50 hover:bg-cream-deep"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {messages.map((msg, i) => (
-          <ChatMessage
-            key={i}
-            role={msg.role}
-            content={msg.displayContent !== undefined ? msg.displayContent : msg.content}
-            recipe={msg.recipe}
-          />
-        ))}
-
-        {loading && (
-          <div className="mb-5 flex justify-start">
-            <div className="rounded-menu border border-wine/15 bg-cream-soft px-4 py-3 shadow-tag">
-              <span className="font-serif text-sm italic text-olive/60">
-                In cucina…
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input */}
-      <div className="flex-shrink-0 border-t border-wine/15 bg-cream-soft/90 p-4 backdrop-blur-sm">
-        <div className="flex items-end gap-3">
+      {/* Question form */}
+      <form onSubmit={handleSubmit} className="w-full">
+        <div className="rounded-menu border border-wine/15 bg-cream-soft/90 p-6 shadow-lift sm:p-8">
+          <label className="block font-serif text-center text-lg font-semibold text-wine mb-4">
+            What's your question?
+          </label>
           <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Tell me what's in your fridge…"
-            rows={1}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="e.g. What can I make with tomato, garlic and pasta?"
+            rows={3}
             disabled={loading}
-            className="flex-1 resize-none rounded-menu border border-olive/30 bg-cream px-4 py-3 text-sm text-olive placeholder:italic placeholder:text-olive/40 focus:border-olive focus:outline-none disabled:opacity-60"
+            className="w-full resize-none rounded-menu border border-olive/30 bg-cream px-4 py-3 text-sm text-olive placeholder:italic placeholder:text-olive/40 focus:border-olive focus:outline-none disabled:opacity-60"
           />
           <button
-            onClick={() => send()}
-            disabled={loading || !input.trim()}
-            className="font-serif rounded-menu border border-wine-dark/30 bg-wine px-5 py-3 text-sm font-semibold text-cream shadow-[0_3px_0_rgba(60,30,20,0.25)] transition hover:bg-wine-dark active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55"
+            type="submit"
+            disabled={loading || !question.trim()}
+            className="font-serif mt-5 w-full rounded-menu border border-wine-dark/30 bg-wine px-6 py-3.5 text-lg font-semibold tracking-wide text-cream shadow-[0_3px_0_rgba(60,30,20,0.25)] transition hover:bg-wine-dark active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55"
           >
-            Invia
+            {loading ? "In cucina…" : "Ask"}
           </button>
         </div>
-        <p className="mt-2 text-center text-xs text-olive/40">
-          Enter to send · Shift+Enter for new line
-        </p>
-      </div>
+      </form>
+
+      {/* Response */}
+      {(response || error) && (
+        <div className="mt-10 w-full">
+          {error && (
+            <div className="rounded-menu border-2 border-wine/40 bg-cream-soft p-6 text-center shadow-menu" role="alert">
+              <p className="font-serif text-lg font-semibold text-wine">Non siamo riusciti</p>
+              <p className="mt-2 text-sm text-olive/90">{error}</p>
+            </div>
+          )}
+
+          {response && (
+            <article className="rounded-menu border-[3px] border-double border-wine/85 bg-cream-soft shadow-menu overflow-hidden">
+              <div className="border-b border-wine/20 bg-gradient-to-b from-cream-deep/90 to-cream-soft px-8 py-5 text-center">
+                <p className="font-serif text-xs font-semibold uppercase tracking-[0.4em] text-olive/75">
+                  La risposta
+                </p>
+              </div>
+              <div className="px-8 py-7">
+                <p className="font-sans text-sm leading-relaxed text-olive whitespace-pre-wrap">
+                  {response}
+                </p>
+              </div>
+              <footer className="flex justify-center border-t border-wine/10 bg-cream-deep/30 px-6 py-4">
+                <div className="h-px w-16 bg-gradient-to-r from-transparent via-wine/25 to-transparent" />
+              </footer>
+            </article>
+          )}
+        </div>
+      )}
     </div>
   );
 }
