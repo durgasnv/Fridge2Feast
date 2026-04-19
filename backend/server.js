@@ -17,8 +17,6 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // --- routes
 app.get("/health", (_req, res) => {
@@ -46,13 +44,24 @@ async function ensureDB() {
 export default async function handler(req, res) {
   await ensureDB();
 
-  // Fix for Vercel body parsing issue
-  if (req.body && typeof req.body === "string") {
-    try {
-      req.body = JSON.parse(req.body);
-    } catch (e) {
-      return res.status(400).json({ error: "Invalid JSON body" });
-    }
+  // manually parse body (Vercel safe)
+  if (req.method === "POST") {
+    let body = "";
+
+    await new Promise((resolve) => {
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+
+      req.on("end", () => {
+        try {
+          req.body = body ? JSON.parse(body) : {};
+        } catch (err) {
+          req.body = {};
+        }
+        resolve();
+      });
+    });
   }
 
   return serverless(app)(req, res);
